@@ -2,12 +2,12 @@
 
 # FENNEC
 
-**Version 1.1.2** · Original design by CiferTech · Modified by SilentFOX
+**Version 1.1.3** · Original design by CiferTech · Modified by SilentFOX
 
 Handheld shortwave receiver, digital-mode monitor and signal hunter on **ESP32-S3 + SI4732**.
 
 <p>
-  <img src="https://img.shields.io/badge/version-1.1.2-c9a468" alt="Version 1.1.2"/>
+  <img src="https://img.shields.io/badge/version-1.1.3-c9a468" alt="Version 1.1.3"/>
   <img src="https://img.shields.io/badge/MCU-ESP32--S3-c9a468" alt="ESP32-S3"/>
   <img src="https://img.shields.io/badge/Radio-SI4732-c9a468" alt="SI4732"/>
   <img src="https://img.shields.io/badge/license-MIT-c9a468" alt="MIT License"/>
@@ -38,7 +38,7 @@ Handheld shortwave receiver, digital-mode monitor and signal hunter on **ESP32-S
 
 Fennec is a touchscreen radio / digital-mode receiver built around the **ESP32-S3** and the **SI4732**. It combines six functions — radio (FM/AM/SW/SSB), SSTV image reception, CW (Morse) decoding, FT8 digital decoding, signal-strength homing and event logging — plus a Wi-Fi web remote.
 
-This document is the complete user manual for version **1.1.2**.
+This document is the complete user manual for version **1.1.3**.
 
 ---
 
@@ -52,6 +52,7 @@ This document is the complete user manual for version **1.1.2**.
 | Microphone | I²S digital microphone (MIC input selectable for SSTV/CW/FT8) |
 | Indicator | On-board NEOPIXEL |
 | Antenna | SMA antenna connector (receive) |
+| Wi-Fi | 2.4 GHz access point `Fennec` (WPA2-PSK, default password `12345678`) plus optional STA connection to your home network |
 
 **Controls: everything is done on the touchscreen.** This unit has no physical buttons (the rotary switch is power only); every function is entered by tapping the main menu. If a particular firmware build still carries key-handling code, it has no effect on this hardware and does not affect normal use.
 
@@ -70,6 +71,9 @@ This document is the complete user manual for version **1.1.2**.
 3. The menu has six entries: `01 RADIO` / `02 SSTV` / `03 MORSE` / `04 FT8` / `05 HOMING` / `06 WATCH`. `BACK` in the top-left corner of each page returns to the main menu.
 
    > **FT8 is a licensed feature**: on an unauthorized device the main menu **does not show the FT8 entry** (the other five work normally), and the serial `f` command and the web FT8 panel are equally unavailable. The boot log on the serial port (115200) prints `[ft8lock] MAC=xxxxxxxxxxxx UNLOCKED` or `LOCKED (hidden)`. If your device is not authorized, contact the device supplier to obtain a license.
+4. **Open the web UI from a phone or computer**: the device provides a Wi-Fi access point with SSID `Fennec`, **secured with WPA2-PSK, default password `12345678`**. Connect to it and open `http://192.168.4.1/` in a browser. If the device is also connected to your home Wi-Fi (STA), you can use the STA IP shown on screen instead.
+
+   > **The hotspot is encrypted from 1.1.3 onwards**: in earlier versions the `Fennec` hotspot was an open network; this version moves it to WPA2-PSK. **After upgrading, first select "Forget network" for `Fennec` in your phone's Wi-Fi list, then reconnect and enter the password `12345678`** — otherwise the phone keeps the old open-network profile and cannot connect.
 
 ## 3. RADIO
 
@@ -87,9 +91,9 @@ This document is the complete user manual for version **1.1.2**.
 
 ## 4. SSTV / MORSE / HOMING / WATCH (Overview)
 
-- **SSTV**: receives slow-scan television pictures (Robot 36 and similar modes); the image is drawn line by line on the display. The audio source can be switched between RADIO and MIC.
+- **SSTV**: receives slow-scan television pictures (Robot 36 and similar modes); the image is drawn line by line on the display. The audio source can be switched between RADIO and MIC. The picture is also available in the web UI — see 4.1.
 - **MORSE**: automatic CW / Morse copy, with an adjustable tone-center frequency (`PIT-` / `PIT+` next to the tone readout).
-- **HOMING**: signal-strength direction finding; a live bar graph helps you judge where the signal is coming from.
+- **HOMING**: signal-strength direction finding; a live bar graph helps you judge where the signal is coming from. When memory runs low the page automatically falls back to direct drawing and stays usable (no more blank screen).
 - **WATCH**: threshold event logging; serial `d` replays the log.
 
 <table>
@@ -105,15 +109,32 @@ This document is the complete user manual for version **1.1.2**.
   </tr>
 </table>
 
-<p align="center">
-  <img src="docs/images/fennec-ft8.jpg" alt="FT8 page" width="320"/>
-  <br/>
-  <em>FT8 page — 15-second slots, 7074 kHz USB, preset buttons 3573 / 7074 / 14074 / 21074</em>
-</p>
+### 4.1 SSTV Preview in the Web UI (dedicated port in 1.1.3)
+
+The SSTV picture preview in the web UI now uses a **dedicated port, 8081**:
+
+```
+http://<device-ip>:8081/frame.bmp
+```
+
+- Open the web UI and switch to the SSTV panel; the page points at port 8081 automatically and the frame is normally refreshed **about every 3 seconds**.
+- The old `http://<device-ip>/api/sstv.bmp` endpoint is retired and returns 410 (pointing you at 8081).
+- **Why it changed**: previously the preview shared the main web service, so pushing a frame occupied the main loop — the device screen could stutter and the SSTV capture could be interrupted. The preview now uses port 8081 and sends non-blocking chunks, so **the device screen no longer stutters and SSTV capture is no longer interrupted**. The trade-off is a slower preview refresh (about one frame every 3 seconds); this is expected behaviour, not a fault.
+
+### 4.2 Stability Notes (1.1.3)
+
+This release fixes several stability problems that affected normal use:
+
+- **The device rebooted about 5 seconds after entering SSTV or FT8**: the sampling timer ran too tightly, saturated the CPU and triggered the watchdog. Fixed — you can now stay on these pages indefinitely.
+- **The device screen froze while the web UI was open, and SSTV capture was interrupted**: caused by the web picture transfer occupying the main loop, fixed together with the dedicated port in 4.1.
+- **HOMING page was completely blank**: drawing failed when memory was low; it now falls back to direct drawing and the page displays normally.
+- **Slow page switching**: the wait when changing pages is noticeably shorter.
+
+## 5. SSTV / MORSE / HOMING / WATCH and FT8 — Additional Notes
 
 ### 5.6 Web Remote View
 
-Connect a phone or computer to the Fennec hotspot (default SSID `Fennec`, open network) and open `http://192.168.4.1/` in a browser. Tap **FT8** in the navigation bar to see the live decoded message list, switch between MIC and RADIO, and jump to a frequency. If the device is also connected to your home Wi-Fi (STA), it is more convenient to use the STA IP shown on screen.
+Connect a phone or computer to the Fennec hotspot (SSID `Fennec`, **WPA2 encrypted, default password `12345678`**) and open `http://192.168.4.1/` in a browser. Tap **FT8** in the navigation bar to see the live decoded message list, switch between MIC and RADIO, and jump to a frequency. If the device is also connected to your home Wi-Fi (STA), it is more convenient to use the STA IP shown on screen.
 
 ### 5.7 No-PSRAM Streaming Decode
 
@@ -123,6 +144,8 @@ Although this module is an N16R8, the octal PSRAM pins conflict with the display
 - At 24/7 continuous decoding, flash write endurance is roughly 1.5 years or more, which is far beyond normal use;
 - For everyday use with occasional page entries, the effect on endurance is negligible.
 
+> **Stability fix in 1.1.3**: previously the device rebooted about 5 seconds after entering the FT8 page (the sampling timer saturated the CPU and triggered the watchdog). This is fixed; you can now stay on the FT8 page and decode for long periods.
+
 ### 5.8 Troubleshooting Checklist When No Messages Appear
 
 1. The status line stays at `NO WIFI` → Wi-Fi is not connected: go to `SETTINGS → WIFI STA`, configure it again (check SSID/password), tap **SAVE**, then tap **CONNECT**, and watch whether the status line changes from `CONNECTING...` to `OK x.x.x.x`.
@@ -131,6 +154,7 @@ Although this module is an N16R8, the octal PSRAM pins conflict with the display
 4. A few messages appear but many are garbled or missing → clock drift: make sure NTP keeps working; when using MIC input, check that the level is not overloading.
 5. Speaker howl interferes with decoding → press `MUTE` (this only mutes audio, not decoding).
 6. To confirm the device is decoding normally → watch the status line flash `DECODING` every 15 seconds.
+7. To check the remaining memory on the serial console → one `[mem] enter/exit ...` line is printed each time you enter or leave a function (see section 7); a very low `free` value means the heap is tight.
 
 ## 6. Wi-Fi Configuration and Web Remote
 
@@ -171,13 +195,15 @@ Notes:
 - A wrong password causes the connection to fail (the status line returns to `DISCONNECTED` after 30 seconds): re-enter this page, correct it and tap **CONNECT** again.
 - To connect temporarily without saving: just fill in the fields and tap **CONNECT**, without tapping **SAVE**.
 - Clearing both input fields and tapping **SAVE** deletes the stored credentials.
-- The `Fennec` hotspot stays open after a STA connection is established (AP+STA dual mode), so you can always get back in to fix the configuration.
+- The `Fennec` hotspot stays available after a STA connection is established (AP+STA dual mode), so you can always get back in to fix the configuration; since 1.1.3 the hotspot itself is WPA2 encrypted (password `12345678`).
 - `FENNEC_WIFI_STA_SSID/PASS` in [Config.h](Fennec/Config.h) at compile time are only factory defaults; once Wi-Fi has been saved on the device, the device storage takes precedence.
 
 ### 6.2 Web Remote
 
-- Device hotspot: SSID `Fennec` (open network), address `http://192.168.4.1/`; once STA is connected you can also use the IP shown on the status line.
+- Device hotspot: SSID `Fennec`, **WPA2-PSK encrypted, default password `12345678`**; address `http://192.168.4.1/` (once STA is connected you can also use the IP shown on the status line).
+- If your phone previously joined the open hotspot of an older firmware, select "Forget network" first, then reconnect and enter the password.
 - The web interface includes panels for RADIO tuning/volume/mute, SSTV status, CW, FT8, HOMING and WATCH.
+- **SSTV preview**: dedicated port `http://<device-ip>:8081/frame.bmp`, refreshed about every 3 seconds; the old `/api/sstv.bmp` is retired (returns 410). See 4.1.
 - If STA is not configured or cannot connect, the hotspot method always works (connect to the hotspot first, then open the web page).
 
 ## 7. Serial Command Reference (USB serial, 115200)
@@ -193,6 +219,18 @@ Notes:
 | `c` / `C` | Touch calibration / clear calibration | `i` | Print status information |
 | `?` | Command help | | |
 
+### 7.1 Memory Logging (reduced in 1.1.3)
+
+The verbose debug logging of the development period has been removed. Instead, **one line with the free heap is printed each time a function is entered and exited**, for example:
+
+```
+[mem] enter SSTV free=84216 maxblk=77824
+[mem] exit  SSTV free=86120 maxblk=77824
+```
+
+- `free` is the current free heap in bytes, `maxblk` is the largest contiguous block that can still be allocated.
+- As long as `free` stays in the tens of KB and `maxblk` has not collapsed to a tiny value, memory is healthy; if `free` is clearly low, leave the memory-hungry function before starting the next one.
+
 ## 8. FAQ
 
 - **Q: The touchscreen is inaccurate.** Settings → TOUCH calibration; or serial `c`.
@@ -201,12 +239,15 @@ Notes:
 - **Q: How do I change Wi-Fi networks?** Settings → WIFI STA, enter the new values, **SAVE** then **CONNECT**; or clear both input fields and **SAVE** to delete the stored credentials.
 - **Q: Why is there no more PSRAM error?** Since 1.1.0, FT8 uses LittleFS streaming decode and no longer depends on PSRAM.
 - **Q: How do I restore the factory touch calibration?** Serial `C`, then reboot and calibrate again.
+- **Q: The `Fennec` hotspot will not connect / keeps rejecting the password.** From 1.1.3 the hotspot is WPA2 encrypted with password `12345678`. In your system Wi-Fi list, select "Forget network" for that hotspot first, then reconnect and enter the password.
+- **Q: Why does the SSTV picture in the web UI only update every few seconds?** The preview runs on the dedicated port 8081 at about one frame every 3 seconds, so that the device screen never stutters and SSTV capture is never interrupted. This is expected.
+- **Q: Why are there fewer serial log lines?** 1.1.3 removes the verbose debug logging; only one `[mem] enter/exit ... free/maxblk` line is printed per function entry and exit, for checking memory headroom.
 
 ## 9. Technical Specifications
 
 | Item | Specification |
 |---|---|
-| Firmware version | 1.1.2 |
+| Firmware version | 1.1.3 |
 | Receive range | FM 64–108 / MW / SW 2.3–26.1 MHz (SI4732) |
 | SSB fine tuning | Adjustable BFO |
 | FT8 presets | 3573 / 7074 / 14074 / 21074 kHz (USB) |
@@ -215,15 +256,32 @@ Notes:
 | Message buffer | 32 messages on screen / live push to the web UI |
 | Flash partitioning | 16 MB; FT8 uses ~1.4 MB LittleFS streaming buffer |
 | Touch calibration | Four-point interpolated mapping, stored in the NVS `wbtouch` namespace |
+| Access point | SSID `Fennec`, WPA2-PSK, default password `12345678` |
+| SSTV web preview | Dedicated port 8081, `/frame.bmp`, about one frame every 3 seconds |
 
 ---
 
 ## 10. Changelog
 
+### v1.1.3 (2026-11-16)
+
+**Changes**
+
+- **Encrypted hotspot**: the `Fennec` access point changed from an open network to **WPA2-PSK with default password `12345678`**. Phones/computers that were paired before must "forget the network" and enter the password again
+- **SSTV preview in the web UI moved to a dedicated port, 8081** (`http://<device-ip>:8081/frame.bmp`), refreshed about once every 3 seconds; the old `/api/sstv.bmp` is retired and returns 410
+- **Reduced logging**: verbose debug logging removed; one free-heap line is now printed when entering and when leaving each function, e.g. `[mem] enter SSTV free=... maxblk=...`
+
+**Fixes**
+
+- Fixed the device rebooting about 5 seconds after entering SSTV / FT8 (the sampling timer saturated the CPU and triggered the watchdog)
+- Fixed the device screen freezing and SSTV capture being interrupted while the web UI was open (preview moved to a dedicated port with non-blocking sending)
+- Fixed the HOMING page turning completely blank when memory was low (it now falls back to direct drawing)
+- Improved slow page switching
+
 ### v1.1.2 (2026-10-31)
 
 - Fixed the SI4732 frequency storage unit pitfall (FM 10 kHz / AM-SW 1 kHz)
-- Added a "direct frequency entry" section: integer/decimal parsing rules, automatic band switching, DEL/CANCEL/OK operation
+- Added "direct frequency entry": integer/decimal parsing rules, automatic band switching, DEL/CANCEL/OK operation
 
 ### v1.1.1 (2026-10-25)
 
@@ -247,7 +305,7 @@ Notes:
 
 - New fifth settings entry **WIFI STA** (shows the stored SSID on the right) → a dedicated configuration page: SSID/PASS input rows (password masked) + full-screen soft keyboard (QWERTY / 12# symbol layer / case toggle / backspace / space) + **separate SAVE / CONNECT buttons**
 - Credentials stored in NVS (namespace `fennec`, keys ssid/pass) and survive power loss; **SAVE** only persists, **CONNECT** only connects (so you can connect temporarily without saving); `FENNEC_WIFI_STA_SSID/PASS` in Config.h is downgraded to a factory default
-- AP+STA dual mode: the `Fennec` hotspot always stays open for rescue configuration; the status line has four states `DISCONNECTED / CONNECTING... / OK x.x.x.x / SAVED`
+- AP+STA dual mode: the `Fennec` hotspot always stays available for rescue configuration; the status line has four states `DISCONNECTED / CONNECTING... / OK x.x.x.x / SAVED`
 - Clearing both input fields and tapping SAVE deletes the stored credentials
 - **Three NTP servers** (pool.ntp.org / ntp.aliyun.com / ntp.tencent.com) with 15-second retry, fixing FT8 being stuck at NO UTC when pool.ntp.org is unreachable in some regions
 
@@ -277,8 +335,12 @@ Pre-built firmware for **ESP32-S3 (16 MB flash)** is published on the [Releases]
 
 ```bash
 esptool.py --chip esp32s3 -p <PORT> -b 921600 write_flash \
-  0x0     Fennec-1.1.2-esp32s3.bin
+  0x0     Fennec_1.1.3_merged.bin
 ```
+
+To keep your stored settings, flash the application image only at `0x10000` instead (`Fennec_1.1.3_app.bin`).
+
+Build footprint of this release: flash 999,213 bytes (31%), RAM 215,056 bytes (65%).
 
 Use the Arduino IDE or `arduino-cli` to build from source with the board options above.
 
